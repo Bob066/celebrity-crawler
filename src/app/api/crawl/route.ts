@@ -88,12 +88,17 @@ async function startCrawling(
     });
 
     try {
-      const crawler = getCrawler(source);
+      // 获取 API Key（如果有）
+      const apiKey = getApiKeyForSource(source, apiKeys);
+      const hasApiKey = !!apiKey && apiKey.trim().length > 0;
+
+      // 根据是否有 API Key 选择爬虫（有 Key 用 API 爬虫，无 Key 用公开爬虫）
+      const crawler = getCrawler(source, hasApiKey);
 
       // 构建爬虫配置
       const config: CrawlerConfig = {
         source,
-        apiKey: getApiKeyForSource(source, apiKeys),
+        apiKey: hasApiKey ? apiKey : undefined,
         maxItems: 100,
       };
 
@@ -101,6 +106,8 @@ async function startCrawling(
       if (!crawler.validateConfig(config)) {
         throw new Error(`${source} 配置无效`);
       }
+
+      console.log(`开始爬取 ${source}，模式: ${hasApiKey ? 'API' : '公开'}`);
 
       let itemsCrawled = 0;
 

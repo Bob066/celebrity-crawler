@@ -16,46 +16,57 @@ const DATA_SOURCES: {
   name: string;
   description: string;
   requiresApiKey: boolean;
+  hasPublicMode: boolean;  // 是否支持无 Key 公开爬取
   apiKeyName?: string;
+  publicModeNote?: string;
 }[] = [
   {
     id: 'wikipedia',
     name: 'Wikipedia',
-    description: '维基百科基本信息（免费，无需配置）',
+    description: '维基百科基本信息',
     requiresApiKey: false,
+    hasPublicMode: true,
   },
   {
     id: 'twitter',
     name: 'X (Twitter)',
     description: '社交媒体发言、转推和回复',
-    requiresApiKey: true,
+    requiresApiKey: false,
+    hasPublicMode: true,
     apiKeyName: 'TWITTER_BEARER_TOKEN',
+    publicModeNote: '无 Key 模式：通过 Nitter/搜索引擎/Wayback Machine 获取',
   },
   {
     id: 'youtube',
     name: 'YouTube',
     description: '采访视频、演讲的字幕和文字稿',
-    requiresApiKey: true,
+    requiresApiKey: false,
+    hasPublicMode: true,
     apiKeyName: 'YOUTUBE_API_KEY',
+    publicModeNote: '无 Key 模式：通过 Invidious/公开页面获取',
   },
   {
     id: 'news',
     name: '新闻聚合',
     description: '各大新闻媒体的报道文章',
-    requiresApiKey: true,
+    requiresApiKey: false,
+    hasPublicMode: true,
     apiKeyName: 'GOOGLE_SEARCH_API_KEY',
+    publicModeNote: '无 Key 模式：通过 Bing/Google News RSS/DuckDuckGo/Reddit 获取',
   },
   {
     id: 'book',
     name: '书籍/传记',
     description: '相关书籍和传记内容摘要',
     requiresApiKey: false,
+    hasPublicMode: true,
   },
   {
     id: 'podcast',
     name: '播客',
     description: '播客出镜内容的文字稿',
     requiresApiKey: true,
+    hasPublicMode: false,
     apiKeyName: 'SPOTIFY_API_KEY',
   },
 ];
@@ -71,6 +82,12 @@ export function SourceConfig({
   const [llmApiKey, setLlmApiKey] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState('');
+  // 记录哪些数据源使用公开模式（无 Key）
+  const [publicModeEnabled, setPublicModeEnabled] = useState<Record<string, boolean>>({
+    twitter: true,
+    youtube: true,
+    news: true,
+  });
 
   const handleSourceToggle = (sourceId: DataSource) => {
     if (selectedSources.includes(sourceId)) {
@@ -82,6 +99,18 @@ export function SourceConfig({
 
   const handleApiKeyChange = (keyName: string, value: string) => {
     onApiKeysChange({ ...apiKeys, [keyName]: value });
+  };
+
+  const togglePublicMode = (sourceId: string) => {
+    setPublicModeEnabled({
+      ...publicModeEnabled,
+      [sourceId]: !publicModeEnabled[sourceId],
+    });
+    // 如果切换到公开模式，清空对应的 API Key
+    const source = DATA_SOURCES.find((s) => s.id === sourceId);
+    if (source?.apiKeyName && !publicModeEnabled[sourceId]) {
+      onApiKeysChange({ ...apiKeys, [source.apiKeyName]: '' });
+    }
   };
 
   const handleContinue = async () => {
@@ -215,15 +244,86 @@ export function SourceConfig({
                     </div>
                   </div>
                 </div>
-                {!source.requiresApiKey && (
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
-                    免费
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {source.hasPublicMode && (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                      支持免费
+                    </span>
+                  )}
+                  {!source.hasPublicMode && source.requiresApiKey && (
+                    <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
+                      需要 Key
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* API Key 输入 */}
-              {source.requiresApiKey &&
+              {/* 公开模式切换 + API Key 输入 */}
+              {source.hasPublicMode &&
+                source.apiKeyName &&
+                selectedSources.includes(source.id) && (
+                  <div className="mt-3 ml-7 space-y-2">
+                    {/* 模式切换 */}
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`mode-${source.id}`}
+                          checked={publicModeEnabled[source.id]}
+                          onChange={() => {
+                            if (!publicModeEnabled[source.id]) {
+                              togglePublicMode(source.id);
+                            }
+                          }}
+                          className="w-4 h-4 text-green-600"
+                        />
+                        <span className="text-sm text-gray-700">
+                          免费公开爬取
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`mode-${source.id}`}
+                          checked={!publicModeEnabled[source.id]}
+                          onChange={() => {
+                            if (publicModeEnabled[source.id]) {
+                              togglePublicMode(source.id);
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600"
+                        />
+                        <span className="text-sm text-gray-700">
+                          使用 API Key（更稳定）
+                        </span>
+                      </label>
+                    </div>
+
+                    {/* 公开模式说明 */}
+                    {publicModeEnabled[source.id] && source.publicModeNote && (
+                      <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                        {source.publicModeNote}
+                      </div>
+                    )}
+
+                    {/* API Key 输入（仅在非公开模式时显示） */}
+                    {!publicModeEnabled[source.id] && (
+                      <input
+                        type="password"
+                        value={apiKeys[source.apiKeyName] || ''}
+                        onChange={(e) =>
+                          handleApiKeyChange(source.apiKeyName, e.target.value)
+                        }
+                        placeholder={`输入 ${source.apiKeyName}`}
+                        className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    )}
+                  </div>
+                )}
+
+              {/* 仅需要 API Key 的数据源（无公开模式） */}
+              {!source.hasPublicMode &&
+                source.requiresApiKey &&
                 selectedSources.includes(source.id) && (
                   <div className="mt-3 ml-7">
                     <input
