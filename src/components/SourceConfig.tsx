@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { DataSource, LLMProvider } from '@/types';
+import { ApiKeyHelpLink } from './ApiKeyGuide';
 
 interface SourceConfigProps {
   onLLMConfigured: (provider: LLMProvider, apiKey: string) => void;
@@ -19,6 +20,7 @@ const DATA_SOURCES: {
   hasPublicMode: boolean;  // 是否支持无 Key 公开爬取
   apiKeyName?: string;
   publicModeNote?: string;
+  guideProvider?: 'twitter' | 'youtube' | 'google' | 'spotify';  // 对应的帮助指南
 }[] = [
   {
     id: 'wikipedia',
@@ -35,6 +37,7 @@ const DATA_SOURCES: {
     hasPublicMode: true,
     apiKeyName: 'TWITTER_BEARER_TOKEN',
     publicModeNote: '无 Key 模式：通过 Nitter/搜索引擎/Wayback Machine 获取',
+    guideProvider: 'twitter',
   },
   {
     id: 'youtube',
@@ -44,6 +47,7 @@ const DATA_SOURCES: {
     hasPublicMode: true,
     apiKeyName: 'YOUTUBE_API_KEY',
     publicModeNote: '无 Key 模式：通过 Invidious/公开页面获取',
+    guideProvider: 'youtube',
   },
   {
     id: 'news',
@@ -53,6 +57,7 @@ const DATA_SOURCES: {
     hasPublicMode: true,
     apiKeyName: 'GOOGLE_SEARCH_API_KEY',
     publicModeNote: '无 Key 模式：通过 Bing/Google News RSS/DuckDuckGo/Reddit 获取',
+    guideProvider: 'google',
   },
   {
     id: 'book',
@@ -68,6 +73,7 @@ const DATA_SOURCES: {
     requiresApiKey: true,
     hasPublicMode: false,
     apiKeyName: 'SPOTIFY_API_KEY',
+    guideProvider: 'spotify',
   },
 ];
 
@@ -184,9 +190,12 @@ export function SourceConfig({
         </div>
 
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            {llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API Key
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-medium text-gray-700">
+              {llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'} API Key
+            </label>
+            <ApiKeyHelpLink provider={llmProvider} />
+          </div>
           <input
             type="password"
             value={llmApiKey}
@@ -308,15 +317,25 @@ export function SourceConfig({
 
                     {/* API Key 输入（仅在非公开模式时显示） */}
                     {!publicModeEnabled[source.id] && (
-                      <input
-                        type="password"
-                        value={apiKeys[source.apiKeyName] || ''}
-                        onChange={(e) =>
-                          handleApiKeyChange(source.apiKeyName, e.target.value)
-                        }
-                        placeholder={`输入 ${source.apiKeyName}`}
-                        className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-500">
+                            {source.apiKeyName}
+                          </span>
+                          {source.guideProvider && (
+                            <ApiKeyHelpLink provider={source.guideProvider} />
+                          )}
+                        </div>
+                        <input
+                          type="password"
+                          value={apiKeys[source.apiKeyName] || ''}
+                          onChange={(e) =>
+                            handleApiKeyChange(source.apiKeyName, e.target.value)
+                          }
+                          placeholder={`输入 ${source.apiKeyName}`}
+                          className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
                     )}
                   </div>
                 )}
@@ -325,7 +344,15 @@ export function SourceConfig({
               {!source.hasPublicMode &&
                 source.requiresApiKey &&
                 selectedSources.includes(source.id) && (
-                  <div className="mt-3 ml-7">
+                  <div className="mt-3 ml-7 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">
+                        {source.apiKeyName}
+                      </span>
+                      {source.guideProvider && (
+                        <ApiKeyHelpLink provider={source.guideProvider} />
+                      )}
+                    </div>
                     <input
                       type="password"
                       value={apiKeys[source.apiKeyName || ''] || ''}
