@@ -4,6 +4,33 @@ import { useState, useEffect } from 'react';
 import { Celebrity } from '@/types';
 import { PriceComparison, PaymentMethod, PriceInfo } from '@/types/paid-sources';
 
+interface FilteredResource {
+  title: string;
+  type: string;
+  reason: string;
+  matchedFreeTitle?: string;
+}
+
+interface PaidResourceStats {
+  freeContent: {
+    total: number;
+    byPriority: Record<number, number>;
+    coveredTypes: string[];
+    missingTypes: string[];
+    hasEnoughPrimary: boolean;
+  };
+  paidResources: {
+    totalSearched: number;
+    duplicateFiltered: number;
+    lowPrioritySkipped: number;
+    recommended: number;
+  };
+  byType: Record<string, number>;
+  byRecommendation: Record<string, number>;
+  totalPriceIfBuyAll: number;
+  highlyRecommendedCount: number;
+}
+
 interface PaidResourceListProps {
   celebrity: Celebrity;
   onResourceSelected?: (resource: PriceComparison) => void;
@@ -59,7 +86,11 @@ export function PaidResourceList({
   onResourceSelected,
 }: PaidResourceListProps) {
   const [resources, setResources] = useState<PriceComparison[]>([]);
+  const [filteredResources, setFilteredResources] = useState<FilteredResource[]>([]);
+  const [stats, setStats] = useState<PaidResourceStats | null>(null);
+  const [message, setMessage] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [showFiltered, setShowFiltered] = useState(false);
   const [filter, setFilter] = useState<{
     type: string | null;
     recommendation: string | null;
@@ -88,6 +119,9 @@ export function PaidResourceList({
 
       const data = await response.json();
       setResources(data.comparisons || []);
+      setFilteredResources(data.filteredResources || []);
+      setStats(data.stats || null);
+      setMessage(data.message || '');
     } catch (error) {
       console.error('获取付费资源失败:', error);
     } finally {
@@ -95,7 +129,7 @@ export function PaidResourceList({
     }
   };
 
-  const filteredResources = resources.filter((r) => {
+  const displayResources = resources.filter((r) => {
     if (filter.type && r.resource.type !== filter.type) return false;
     if (filter.recommendation && r.recommendation !== filter.recommendation)
       return false;
@@ -113,12 +147,139 @@ export function PaidResourceList({
     setSelectedResources(newSelected);
   };
 
-  const totalSelectedPrice = filteredResources
+  const totalSelectedPrice = displayResources
     .filter((r) => selectedResources.has(r.resource.id))
     .reduce((sum, r) => sum + (r.bestPriceChina?.priceInCNY || 0), 0);
 
   return (
     <div className="space-y-6">
+      {/* 智能分析提示 */}
+      {message && (
+        <div className={`rounded-lg p-4 ${
+          resources.length === 0
+            ? 'bg-green-50 border border-green-200'
+            : 'bg-blue-50 border border-blue-200'
+        }`}>
+          <div className="flex items-start gap-3">
+            <svg
+              className={`w-5 h-5 mt-0.5 flex-shrink-0 ${
+                resources.length === 0 ? 'text-green-600' : 'text-blue-600'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div>
+              <h4 className={`font-medium ${
+                resources.length === 0 ? 'text-green-900' : 'text-blue-900'
+              }`}>
+                智能筛选结果
+              </h4>
+              <p className={`text-sm mt-1 ${
+                resources.length === 0 ? 'text-green-700' : 'text-blue-700'
+              }`}>
+                {message}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 统计信息 */}
+      {stats && (
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-bold text-gray-900">
+                {stats.freeContent.total}
+              </div>
+              <div className="text-xs text-gray-500">已爬取免费内容</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-blue-600">
+                {stats.paidResources.totalSearched}
+              </div>
+              <div className="text-xs text-gray-500">搜索到付费资源</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-green-600">
+                {stats.paidResources.duplicateFiltered}
+              </div>
+              <div className="text-xs text-gray-500">与免费内容重复</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-purple-600">
+                {stats.paidResources.recommended}
+              </div>
+              <div className="text-xs text-gray-500">推荐购买</div>
+            </div>
+          </div>
+
+          {/* 免费内容覆盖情况 */}
+          {stats.freeContent.hasEnoughPrimary && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="flex items-center gap-2 text-sm text-green-600">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                已有足够一手资料 (P1+P2: {stats.freeContent.byPriority[1] + stats.freeContent.byPriority[2]} 条)
+              </div>
+            </div>
+          )}
+
+          {stats.freeContent.missingTypes.length > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="text-sm text-yellow-600">
+                缺少的内容类型: {stats.freeContent.missingTypes.join('、')}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 被过滤的资源（可展开） */}
+      {filteredResources.length > 0 && (
+        <div className="bg-gray-50 rounded-lg border border-gray-200">
+          <button
+            onClick={() => setShowFiltered(!showFiltered)}
+            className="w-full px-4 py-3 flex items-center justify-between text-sm text-gray-600 hover:bg-gray-100"
+          >
+            <span>
+              查看被过滤的 {filteredResources.length} 个资源（与免费内容重复或优先级较低）
+            </span>
+            <svg
+              className={`w-5 h-5 transform transition ${showFiltered ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {showFiltered && (
+            <div className="px-4 pb-4 space-y-2">
+              {filteredResources.map((f, index) => (
+                <div key={index} className="flex items-start gap-2 text-sm py-2 border-t border-gray-200">
+                  <span className="text-gray-400 line-through">{f.title}</span>
+                  <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded whitespace-nowrap">
+                    {TYPE_LABELS[f.type] || f.type}
+                  </span>
+                  <span className="text-xs text-gray-500 ml-auto">{f.reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 筛选栏 */}
       <div className="bg-white rounded-lg shadow p-4">
         <div className="flex flex-wrap gap-4 items-center">
@@ -183,7 +344,7 @@ export function PaidResourceList({
               </span>
               <button
                 onClick={() => {
-                  filteredResources
+                  displayResources
                     .filter((r) => selectedResources.has(r.resource.id))
                     .forEach((r) => onResourceSelected?.(r));
                 }}
@@ -202,13 +363,15 @@ export function PaidResourceList({
           <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
           正在搜索付费资源并比价...
         </div>
-      ) : filteredResources.length === 0 ? (
+      ) : displayResources.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-          没有找到符合条件的付费资源
+          {resources.length === 0
+            ? '免费资源已足够丰富，无需购买付费资源'
+            : '没有找到符合筛选条件的付费资源'}
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredResources.map((comparison) => (
+          {displayResources.map((comparison) => (
             <PaidResourceCard
               key={comparison.resource.id}
               comparison={comparison}
