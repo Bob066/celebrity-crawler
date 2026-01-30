@@ -9,7 +9,7 @@ export class DataExporter {
     contents: ContentItem[]
   ): ExportResult {
     // 统计数据
-    const sources = [...new Set(contents.map((c) => c.source))];
+    const sources = Array.from(new Set(contents.map((c) => c.source)));
     const priorityDistribution: Record<number, number> = {};
 
     contents.forEach((c) => {
