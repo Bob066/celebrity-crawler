@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 支持 SQLite（本地）和 PostgreSQL（Vercel 部署）
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// 名人信息
+model Celebrity {
+  id          String    @id @default(uuid())
+  name        String    // 主要名称
+  aliases     String    // 别名列表，JSON格式存储
+  description String?   // 简介
+  imageUrl    String?   // 头像URL
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  contents    Content[]
+  crawlTasks  CrawlTask[]
+}
+
+// 内容数据
+model Content {
+  id          String    @id @default(uuid())
+  celebrityId String
+  celebrity   Celebrity @relation(fields: [celebrityId], references: [id], onDelete: Cascade)
+
+  source      String    // 来源平台: twitter, youtube, wikipedia, news, book, podcast
+  sourceUrl   String?   // 原始链接
+  type        String    // 内容类型: tweet, interview, biography, article, speech, etc.
+
+  priority    Int       // 优先级 1-5
+  weight      Float     // 权重 0.0-1.0
+
+  title       String?   // 标题
+  content     String    // 内容正文
+  summary     String?   // AI生成的摘要
+
+  date        DateTime? // 内容原始日期
+  author      String?   // 作者（如果不是本人）
+  language    String    @default("en") // 语言
+
+  metadata    String?   // 额外元数据，JSON格式
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([celebrityId])
+  @@index([source])
+  @@index([priority])
+}
+
+// 爬取任务
+model CrawlTask {
+  id          String    @id @default(uuid())
+  celebrityId String
+  celebrity   Celebrity @relation(fields: [celebrityId], references: [id], onDelete: Cascade)
+
+  source      String    // 数据源
+  status      String    @default("pending") // pending, running, completed, failed, cancelled
+
+  progress    Int       @default(0)  // 当前进度
+  total       Int       @default(0)  // 总数
+
+  itemsCrawled Int      @default(0)  // 已爬取条目数
+  error       String?   // 错误信息
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([celebrityId])
+  @@index([status])
+}
+
+// API配置（存储用户的API Keys）
+model ApiConfig {
+  id        String   @id @default(uuid())
+  provider  String   @unique // openai, anthropic, twitter, youtube, google
+  apiKey    String   // 加密存储的API Key
+  isValid   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
