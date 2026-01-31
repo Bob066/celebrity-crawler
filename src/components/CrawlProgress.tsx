@@ -1,6 +1,16 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
 import { CrawlTask, Celebrity } from '@/types';
+
+interface CrawlLog {
+  id: string;
+  taskId: string;
+  level: 'info' | 'warn' | 'error' | 'success';
+  message: string;
+  details: Record<string, unknown> | null;
+  createdAt: string;
+}
 
 interface CrawlProgressProps {
   tasks: CrawlTask[];
@@ -35,7 +45,63 @@ const STATUS_CONFIG: Record<
   },
 };
 
+const LOG_LEVEL_CONFIG: Record<string, { color: string; icon: string }> = {
+  info: { color: 'text-blue-600', icon: 'ℹ️' },
+  warn: { color: 'text-yellow-600', icon: '⚠️' },
+  error: { color: 'text-red-600', icon: '❌' },
+  success: { color: 'text-green-600', icon: '✅' },
+};
+
 export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
+  const [logs, setLogs] = useState<CrawlLog[]>([]);
+  const [showLogs, setShowLogs] = useState(true);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const lastLogTime = useRef<string | null>(null);
+
+  // 轮询获取日志
+  useEffect(() => {
+    if (!celebrity?.id) return;
+
+    const fetchLogs = async () => {
+      try {
+        const url = new URL('/api/logs', window.location.origin);
+        url.searchParams.set('celebrityId', celebrity.id || '');
+        if (lastLogTime.current) {
+          url.searchParams.set('since', lastLogTime.current);
+        }
+
+        const response = await fetch(url.toString());
+        const data = await response.json();
+
+        if (data.logs && data.logs.length > 0) {
+          setLogs((prev) => {
+            const existingIds = new Set(prev.map((l) => l.id));
+            const newLogs = data.logs.filter((l: CrawlLog) => !existingIds.has(l.id));
+            if (newLogs.length > 0) {
+              lastLogTime.current = newLogs[0].createdAt;
+              return [...newLogs.reverse(), ...prev].slice(0, 200); // 保留最近200条
+            }
+            return prev;
+          });
+        }
+      } catch (error) {
+        console.error('获取日志失败:', error);
+      }
+    };
+
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 2000);
+
+    return () => clearInterval(interval);
+  }, [celebrity?.id]);
+
+  // 自动滚动到底部
+  useEffect(() => {
+    if (showLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, showLogs]);
+
   const totalItems = tasks.reduce((sum, task) => sum + task.itemsCrawled, 0);
   const completedTasks = tasks.filter(
     (t) => t.status === 'completed' || t.status === 'failed'
@@ -156,6 +222,54 @@ export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
             );
           })}
         </div>
+      </div>
+
+      {/* 实时日志 */}
+      <div className="bg-white rounded-lg shadow">
+        <div
+          className="px-6 py-4 border-b flex items-center justify-between cursor-pointer"
+          onClick={() => setShowLogs(!showLogs)}
+        >
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <span>实时日志</span>
+            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+              {logs.length} 条
+            </span>
+          </h3>
+          <svg
+            className={`w-5 h-5 text-gray-500 transition-transform ${showLogs ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+
+        {showLogs && (
+          <div className="max-h-80 overflow-y-auto bg-gray-900 text-gray-100 font-mono text-sm">
+            {logs.length === 0 ? (
+              <div className="p-4 text-gray-400 text-center">
+                等待日志...
+              </div>
+            ) : (
+              <div className="p-4 space-y-1">
+                {[...logs].reverse().map((log) => {
+                  const config = LOG_LEVEL_CONFIG[log.level] || LOG_LEVEL_CONFIG.info;
+                  const time = new Date(log.createdAt).toLocaleTimeString('zh-CN');
+                  return (
+                    <div key={log.id} className="flex items-start gap-2">
+                      <span className="text-gray-500 flex-shrink-0">{time}</span>
+                      <span className="flex-shrink-0">{config.icon}</span>
+                      <span className={config.color}>{log.message}</span>
+                    </div>
+                  );
+                })}
+                <div ref={logsEndRef} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 提示信息 */}

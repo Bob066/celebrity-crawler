@@ -8,10 +8,23 @@ export class ClaudeAdapter implements ILLMAdapter {
 
   constructor(apiKey: string, model?: string, baseURL?: string) {
     // 支持自定义 API 代理
-    const options: { apiKey: string; baseURL?: string } = { apiKey };
+    // 优先使用环境变量中的 token，否则使用传入的 apiKey
+    const token = process.env.ANTHROPIC_AUTH_TOKEN || apiKey;
+    const options: { apiKey: string; baseURL?: string; defaultHeaders?: Record<string, string> } = {
+      apiKey: token,
+    };
+
     if (baseURL || process.env.ANTHROPIC_BASE_URL) {
       options.baseURL = baseURL || process.env.ANTHROPIC_BASE_URL;
     }
+
+    // 如果是自定义代理（token 以 cr_ 开头），添加 Authorization 头
+    if (token.startsWith('cr_')) {
+      options.defaultHeaders = {
+        'Authorization': `Bearer ${token}`,
+      };
+    }
+
     this.client = new Anthropic(options);
     // 使用 Claude 4.5 Sonnet 作为默认模型
     this.model = model || 'claude-sonnet-4-20250514';

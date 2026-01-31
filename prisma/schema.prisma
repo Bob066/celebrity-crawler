@@ -86,3 +86,16 @@ model ApiConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// 爬取日志
+model CrawlLog {
+  id          String   @id @default(uuid())
+  taskId      String   // 关联的任务ID
+  level       String   @default("info") // info, warn, error, success
+  message     String   // 日志消息
+  details     String?  // 详细信息（JSON）
+  createdAt   DateTime @default(now())
+
+  @@index([taskId])
+  @@index([createdAt])
+}

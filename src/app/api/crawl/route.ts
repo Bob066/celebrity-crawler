@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Celebrity, DataSource, CrawlerConfig } from '@/types';
 import { getCrawler } from '@/lib/crawlers';
 import prisma from '@/lib/db/prisma';
+import { createCrawlLogger } from '@/lib/utils/crawlLogger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -87,6 +88,9 @@ async function startCrawling(
       data: { status: 'running', startedAt: new Date() },
     });
 
+    // 创建日志记录器
+    const logger = createCrawlLogger(task.id);
+
     try {
       // 获取 API Key（如果有）
       const apiKey = getApiKeyForSource(source, apiKeys);
@@ -104,10 +108,11 @@ async function startCrawling(
 
       // 验证配置
       if (!crawler.validateConfig(config)) {
+        await logger.error(`${source} 配置无效`);
         throw new Error(`${source} 配置无效`);
       }
 
-      console.log(`开始爬取 ${source}，模式: ${hasApiKey ? 'API' : '公开'}`);
+      await logger.info(`开始爬取 ${source}`, { mode: hasApiKey ? 'API' : '公开' });
 
       let itemsCrawled = 0;
 
@@ -134,6 +139,13 @@ async function startCrawling(
 
         itemsCrawled++;
 
+        // 记录每条数据
+        await logger.info(`获取到: ${item.title || item.type}`, {
+          type: item.type,
+          source: item.source,
+          url: item.sourceUrl,
+        });
+
         // 更新进度
         await prisma.crawlTask.update({
           where: { id: task.id },
@@ -153,7 +165,11 @@ async function startCrawling(
           total: itemsCrawled,
         },
       });
+
+      await logger.success(`${source} 爬取完成`, { total: itemsCrawled });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      await logger.error(`爬取失败: ${errorMessage}`);
       console.error(`爬取 ${source} 失败:`, error);
 
       // 标记失败
@@ -161,7 +177,7 @@ async function startCrawling(
         where: { id: task.id },
         data: {
           status: 'failed',
-          error: error instanceof Error ? error.message : '未知错误',
+          error: errorMessage,
           completedAt: new Date(),
         },
       });

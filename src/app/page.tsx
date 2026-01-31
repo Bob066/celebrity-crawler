@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ChatInterface } from '@/components/ChatInterface';
 import { SourceConfig } from '@/components/SourceConfig';
 import { CrawlProgress } from '@/components/CrawlProgress';
@@ -10,7 +10,19 @@ import { Celebrity, DataSource, CrawlTask, LLMProvider } from '@/types';
 
 type AppState = 'config' | 'chat' | 'crawling' | 'preview' | 'paid';
 
+const STORAGE_KEY = 'celebrity-crawler-state';
+
+interface SavedState {
+  appState: AppState;
+  llmConfig: { provider: LLMProvider; apiKey: string } | null;
+  apiKeys: Record<string, string>;
+  celebrity: Celebrity | null;
+  selectedSources: DataSource[];
+  savedAt: string;
+}
+
 export default function Home() {
+  const [isLoaded, setIsLoaded] = useState(false);
   const [appState, setAppState] = useState<AppState>('config');
   const [llmConfig, setLlmConfig] = useState<{
     provider: LLMProvider;
@@ -22,6 +34,100 @@ export default function Home() {
     'wikipedia',
   ]);
   const [crawlTasks, setCrawlTasks] = useState<CrawlTask[]>([]);
+
+  // 轮询爬取状态（提前定义，因为 useEffect 中使用）
+  const pollCrawlStatus = useCallback((celebrityId: string) => {
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/status?celebrityId=${celebrityId}`);
+        const data = await response.json();
+
+        if (data.tasks) {
+          setCrawlTasks(data.tasks);
+
+          // 检查是否全部完成
+          const allCompleted = data.tasks.every(
+            (t: CrawlTask) => t.status === 'completed' || t.status === 'failed'
+          );
+
+          if (allCompleted) {
+            setAppState('preview');
+            return;
+          }
+        }
+
+        // 继续轮询
+        setTimeout(poll, 2000);
+      } catch (error) {
+        console.error('状态查询失败:', error);
+        setTimeout(poll, 5000);
+      }
+    };
+
+    poll();
+  }, []);
+
+  // 从 localStorage 加载状态
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const state: SavedState = JSON.parse(saved);
+        // 检查是否在24小时内
+        const savedTime = new Date(state.savedAt).getTime();
+        const now = Date.now();
+        if (now - savedTime < 24 * 60 * 60 * 1000) {
+          setAppState(state.appState);
+          setLlmConfig(state.llmConfig);
+          setApiKeys(state.apiKeys);
+          setCelebrity(state.celebrity);
+          setSelectedSources(state.selectedSources);
+
+          // 如果之前在爬取中，恢复轮询
+          if (state.appState === 'crawling' && state.celebrity?.id) {
+            pollCrawlStatus(state.celebrity.id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('加载缓存状态失败:', error);
+    }
+    setIsLoaded(true);
+  }, [pollCrawlStatus]);
+
+  // 保存状态到 localStorage
+  const saveState = useCallback(() => {
+    if (!isLoaded) return;
+    try {
+      const state: SavedState = {
+        appState,
+        llmConfig,
+        apiKeys,
+        celebrity,
+        selectedSources,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+      console.error('保存状态失败:', error);
+    }
+  }, [isLoaded, appState, llmConfig, apiKeys, celebrity, selectedSources]);
+
+  // 状态变化时自动保存
+  useEffect(() => {
+    saveState();
+  }, [saveState]);
+
+  // 清除缓存
+  const clearCache = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setAppState('config');
+    setLlmConfig(null);
+    setApiKeys({});
+    setCelebrity(null);
+    setSelectedSources(['wikipedia']);
+    setCrawlTasks([]);
+  };
 
   // 处理LLM配置完成
   const handleLLMConfigured = (provider: LLMProvider, apiKey: string) => {
@@ -76,38 +182,6 @@ export default function Home() {
     }
   };
 
-  // 轮询爬取状态
-  const pollCrawlStatus = async (celebrityId: string) => {
-    const poll = async () => {
-      try {
-        const response = await fetch(`/api/status?celebrityId=${celebrityId}`);
-        const data = await response.json();
-
-        if (data.tasks) {
-          setCrawlTasks(data.tasks);
-
-          // 检查是否全部完成
-          const allCompleted = data.tasks.every(
-            (t: CrawlTask) => t.status === 'completed' || t.status === 'failed'
-          );
-
-          if (allCompleted) {
-            setAppState('preview');
-            return;
-          }
-        }
-
-        // 继续轮询
-        setTimeout(poll, 2000);
-      } catch (error) {
-        console.error('状态查询失败:', error);
-        setTimeout(poll, 5000);
-      }
-    };
-
-    poll();
-  };
-
   // 导出数据
   const handleExport = async (format: 'json' | 'markdown' | 'both') => {
     if (!celebrity) return;
@@ -134,6 +208,15 @@ export default function Home() {
     }
   };
 
+  // 等待加载完成
+  if (!isLoaded) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">加载中...</div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen">
       {/* 头部 */}
@@ -148,22 +231,31 @@ export default function Home() {
                 收集名人公开信息，构建个性化训练数据集
               </p>
             </div>
-            {celebrity && (
-              <div className="flex items-center gap-3 bg-blue-50 px-4 py-2 rounded-lg">
-                <span className="text-blue-700 font-medium">
-                  {celebrity.name}
-                </span>
-                <button
-                  onClick={() => {
-                    setCelebrity(null);
-                    setAppState('chat');
-                  }}
-                  className="text-blue-500 hover:text-blue-700 text-sm"
-                >
-                  更换
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-3">
+              {celebrity && (
+                <div className="flex items-center gap-3 bg-blue-50 px-4 py-2 rounded-lg">
+                  <span className="text-blue-700 font-medium">
+                    {celebrity.name}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setCelebrity(null);
+                      setAppState('chat');
+                    }}
+                    className="text-blue-500 hover:text-blue-700 text-sm"
+                  >
+                    更换
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={clearCache}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1"
+                title="清除缓存，重新开始"
+              >
+                重置
+              </button>
+            </div>
           </div>
 
           {/* 步骤指示器 */}
