@@ -94,8 +94,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Chat API 错误:', error);
+    const errorMessage = error instanceof Error ? error.message : '未知错误';
     return NextResponse.json(
-      { error: '处理请求时发生错误' },
+      { error: `处理请求时发生错误: ${errorMessage}` },
       { status: 500 }
     );
   }

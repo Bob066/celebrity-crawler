@@ -6,9 +6,15 @@ export class ClaudeAdapter implements ILLMAdapter {
   private client: Anthropic;
   private model: string;
 
-  constructor(apiKey: string, model?: string) {
-    this.client = new Anthropic({ apiKey });
-    this.model = model || 'claude-3-opus-20240229';
+  constructor(apiKey: string, model?: string, baseURL?: string) {
+    // 支持自定义 API 代理
+    const options: { apiKey: string; baseURL?: string } = { apiKey };
+    if (baseURL || process.env.ANTHROPIC_BASE_URL) {
+      options.baseURL = baseURL || process.env.ANTHROPIC_BASE_URL;
+    }
+    this.client = new Anthropic(options);
+    // 使用 Claude 4.5 Sonnet 作为默认模型
+    this.model = model || 'claude-sonnet-4-20250514';
   }
 
   async chat(messages: ChatMessage[]): Promise<string> {
