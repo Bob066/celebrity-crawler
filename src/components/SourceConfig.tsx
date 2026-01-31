@@ -328,9 +328,9 @@ export function SourceConfig({
                         </div>
                         <input
                           type="password"
-                          value={apiKeys[source.apiKeyName] || ''}
+                          value={apiKeys[source.apiKeyName || ''] || ''}
                           onChange={(e) =>
-                            handleApiKeyChange(source.apiKeyName, e.target.value)
+                            handleApiKeyChange(source.apiKeyName || '', e.target.value)
                           }
                           placeholder={`输入 ${source.apiKeyName}`}
                           className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
