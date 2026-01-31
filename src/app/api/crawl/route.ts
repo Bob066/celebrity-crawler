@@ -112,7 +112,18 @@ async function startCrawling(
         throw new Error(`${source} 配置无效`);
       }
 
-      await logger.info(`开始爬取 ${source}`, { mode: hasApiKey ? 'API' : '公开' });
+      const sourceNames: Record<string, string> = {
+        twitter: 'X (Twitter)',
+        youtube: 'YouTube',
+        wikipedia: 'Wikipedia',
+        news: '新闻聚合',
+        book: '书籍/传记',
+        podcast: '播客',
+      };
+      const sourceName = sourceNames[source] || source;
+
+      await logger.info(`🚀 开始爬取 ${sourceName}`, { mode: hasApiKey ? 'API模式' : '公开模式' });
+      await logger.info(`🔍 搜索关键词: ${celebrity.name}`, { aliases: celebrity.aliases });
 
       let itemsCrawled = 0;
 
@@ -139,11 +150,14 @@ async function startCrawling(
 
         itemsCrawled++;
 
-        // 记录每条数据
-        await logger.info(`获取到: ${item.title || item.type}`, {
+        // 记录每条数据 - 更详细的信息
+        const contentPreview = item.content.slice(0, 50).replace(/\n/g, ' ');
+        await logger.info(`📄 [${itemsCrawled}] ${item.title || item.type}`, {
           type: item.type,
           source: item.source,
           url: item.sourceUrl,
+          preview: contentPreview,
+          priority: `P${item.priority}`,
         });
 
         // 更新进度
@@ -166,10 +180,11 @@ async function startCrawling(
         },
       });
 
-      await logger.success(`${source} 爬取完成`, { total: itemsCrawled });
+      await logger.success(`🎉 ${sourceName} 爬取完成！共获取 ${itemsCrawled} 条数据`, { total: itemsCrawled });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误';
-      await logger.error(`爬取失败: ${errorMessage}`);
+      await logger.error(`❌ 爬取失败: ${errorMessage}`);
+      await logger.warn(`💡 提示: 如果是网络问题，请检查网络连接或稍后重试`);
       console.error(`爬取 ${source} 失败:`, error);
 
       // 标记失败

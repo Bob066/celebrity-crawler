@@ -28,10 +28,10 @@ const SOURCE_NAMES: Record<string, string> = {
 
 const STATUS_CONFIG: Record<
   string,
-  { color: string; bgColor: string; text: string }
+  { color: string; bgColor: string; text: string; animation?: string }
 > = {
   pending: { color: 'text-gray-600', bgColor: 'bg-gray-100', text: '等待中' },
-  running: { color: 'text-blue-600', bgColor: 'bg-blue-100', text: '爬取中' },
+  running: { color: 'text-blue-600', bgColor: 'bg-blue-100', text: '爬取中', animation: 'animate-pulse' },
   completed: {
     color: 'text-green-600',
     bgColor: 'bg-green-100',
@@ -45,20 +45,21 @@ const STATUS_CONFIG: Record<
   },
 };
 
-const LOG_LEVEL_CONFIG: Record<string, { color: string; icon: string }> = {
-  info: { color: 'text-blue-600', icon: 'ℹ️' },
-  warn: { color: 'text-yellow-600', icon: '⚠️' },
-  error: { color: 'text-red-600', icon: '❌' },
-  success: { color: 'text-green-600', icon: '✅' },
+const LOG_LEVEL_CONFIG: Record<string, { color: string; bgColor: string; icon: string }> = {
+  info: { color: 'text-blue-400', bgColor: 'bg-blue-900/30', icon: '📥' },
+  warn: { color: 'text-yellow-400', bgColor: 'bg-yellow-900/30', icon: '⚠️' },
+  error: { color: 'text-red-400', bgColor: 'bg-red-900/30', icon: '❌' },
+  success: { color: 'text-green-400', bgColor: 'bg-green-900/30', icon: '✅' },
 };
 
 export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
   const [logs, setLogs] = useState<CrawlLog[]>([]);
   const [showLogs, setShowLogs] = useState(true);
+  const [currentAction, setCurrentAction] = useState<string>('初始化...');
   const logsEndRef = useRef<HTMLDivElement>(null);
   const lastLogTime = useRef<string | null>(null);
 
-  // 轮询获取日志
+  // 轮询获取日志 - 更快的频率
   useEffect(() => {
     if (!celebrity?.id) return;
 
@@ -79,7 +80,10 @@ export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
             const newLogs = data.logs.filter((l: CrawlLog) => !existingIds.has(l.id));
             if (newLogs.length > 0) {
               lastLogTime.current = newLogs[0].createdAt;
-              return [...newLogs.reverse(), ...prev].slice(0, 200); // 保留最近200条
+              // 更新当前操作状态
+              const latestLog = newLogs[0];
+              setCurrentAction(latestLog.message);
+              return [...newLogs.reverse(), ...prev].slice(0, 500); // 保留更多日志
             }
             return prev;
           });
@@ -90,7 +94,8 @@ export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
     };
 
     fetchLogs();
-    const interval = setInterval(fetchLogs, 2000);
+    // 更快的轮询频率 - 1秒
+    const interval = setInterval(fetchLogs, 1000);
 
     return () => clearInterval(interval);
   }, [celebrity?.id]);
@@ -106,20 +111,47 @@ export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
   const completedTasks = tasks.filter(
     (t) => t.status === 'completed' || t.status === 'failed'
   ).length;
+  const runningTask = tasks.find((t) => t.status === 'running');
   const overallProgress =
     tasks.length > 0 ? (completedTasks / tasks.length) * 100 : 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {/* 当前状态卡片 */}
+      {runningTask && (
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-3 h-3 bg-white rounded-full animate-ping" />
+            <span className="text-lg font-semibold">正在爬取</span>
+            <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
+              {SOURCE_NAMES[runningTask.source] || runningTask.source}
+            </span>
+          </div>
+          <div className="bg-white/10 rounded-lg p-3 font-mono text-sm">
+            <div className="flex items-center gap-2">
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <span className="truncate">{currentAction}</span>
+            </div>
+          </div>
+          <div className="mt-3 flex justify-between text-sm text-white/80">
+            <span>已获取 {runningTask.itemsCrawled} 条数据</span>
+            <span>目标: {celebrity?.name}</span>
+          </div>
+        </div>
+      )}
+
       {/* 总体进度 */}
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">
-              正在爬取: {celebrity?.name}
+              爬取进度: {celebrity?.name}
             </h2>
             <p className="text-sm text-gray-500">
-              已收集 {totalItems} 条数据
+              已收集 <span className="font-semibold text-blue-600">{totalItems}</span> 条数据
             </p>
           </div>
           <div className="text-right">
@@ -135,7 +167,7 @@ export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
         {/* 总体进度条 */}
         <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
           <div
-            className="h-full progress-animate rounded-full transition-all duration-500"
+            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
             style={{ width: `${overallProgress}%` }}
           />
         </div>
@@ -225,16 +257,21 @@ export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
       </div>
 
       {/* 实时日志 */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white rounded-lg shadow overflow-hidden">
         <div
-          className="px-6 py-4 border-b flex items-center justify-between cursor-pointer"
+          className="px-6 py-4 border-b flex items-center justify-between cursor-pointer hover:bg-gray-50"
           onClick={() => setShowLogs(!showLogs)}
         >
           <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-            <span>实时日志</span>
-            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-              {logs.length} 条
+            <span>📋 详细日志</span>
+            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
+              {logs.length} 条记录
             </span>
+            {logs.length > 0 && (
+              <span className="text-xs text-gray-400">
+                (点击展开/收起)
+              </span>
+            )}
           </h3>
           <svg
             className={`w-5 h-5 text-gray-500 transition-transform ${showLogs ? 'rotate-180' : ''}`}
@@ -247,21 +284,37 @@ export function CrawlProgress({ tasks, celebrity }: CrawlProgressProps) {
         </div>
 
         {showLogs && (
-          <div className="max-h-80 overflow-y-auto bg-gray-900 text-gray-100 font-mono text-sm">
+          <div className="max-h-96 overflow-y-auto bg-gray-900 text-gray-100 font-mono text-xs">
             {logs.length === 0 ? (
-              <div className="p-4 text-gray-400 text-center">
-                等待日志...
+              <div className="p-6 text-gray-400 text-center">
+                <svg className="animate-spin w-6 h-6 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                等待爬取开始...
               </div>
             ) : (
-              <div className="p-4 space-y-1">
+              <div className="p-3 space-y-1">
                 {[...logs].reverse().map((log) => {
                   const config = LOG_LEVEL_CONFIG[log.level] || LOG_LEVEL_CONFIG.info;
-                  const time = new Date(log.createdAt).toLocaleTimeString('zh-CN');
+                  const time = new Date(log.createdAt).toLocaleTimeString('zh-CN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  });
                   return (
-                    <div key={log.id} className="flex items-start gap-2">
-                      <span className="text-gray-500 flex-shrink-0">{time}</span>
-                      <span className="flex-shrink-0">{config.icon}</span>
-                      <span className={config.color}>{log.message}</span>
+                    <div
+                      key={log.id}
+                      className={`flex items-start gap-2 p-2 rounded ${config.bgColor} hover:bg-white/5`}
+                    >
+                      <span className="text-gray-500 flex-shrink-0 w-20">{time}</span>
+                      <span className="flex-shrink-0 w-5">{config.icon}</span>
+                      <span className={`${config.color} flex-1`}>{log.message}</span>
+                      {log.details && log.details.url && (
+                        <span className="text-gray-600 text-xs truncate max-w-[200px]">
+                          {String(log.details.url)}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
